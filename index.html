@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leitor Fiscal Inteligente (Líquido)</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; padding-top: 30px; }
+        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 800px; text-align: center; }
+        
+        h1 { color: #2c3e50; font-size: 1.8rem; margin-bottom: 0.5rem; }
+        p { color: #7f8c8d; margin-bottom: 2rem; }
+        
+        .upload-area { border: 2px dashed #bdc3c7; padding: 30px; border-radius: 10px; cursor: pointer; transition: 0.3s; position: relative; }
+        .upload-area:hover { background-color: #f7f9fa; border-color: #3498db; }
+        .upload-area input { position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+        .btn-text { font-size: 1.1rem; color: #34495e; font-weight: bold; }
+
+        .dashboard { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-top: 30px; display: none; }
+        .card { padding: 20px; border-radius: 8px; text-align: left; color: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        
+        .card-nfce { background: linear-gradient(135deg, #3498db, #2980b9); }
+        .card-sat { background: linear-gradient(135deg, #e67e22, #d35400); }
+        .card-cancelado { background: linear-gradient(135deg, #e74c3c, #c0392b); } /* Vermelho para cancelados */
+        .card-total { grid-column: span 3; background: linear-gradient(135deg, #27ae60, #2ecc71); text-align: center; margin-top: 10px;}
+
+        .card-title { font-size: 0.8rem; text-transform: uppercase; opacity: 0.9; margin-bottom: 5px; }
+        .card-value { font-size: 1.6rem; font-weight: bold; }
+        .card-info { font-size: 0.75rem; opacity: 0.9; margin-top: 5px; }
+
+        #loading { display: none; margin-top: 20px; color: #3498db; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Leitor Fiscal</h1>
+    <p>O sistema irá cruzar as chaves de acesso para deduzir as notas canceladas.</p>
+    
+    <div class="upload-area">
+        <span class="btn-text">📂 Selecionar Pasta com XMLs</span>
+        <input type="file" id="fileInput" webkitdirectory directory multiple />
+    </div>
+
+    <div id="loading">Lendo arquivos e cruzando dados... aguarde.</div>
+
+    <div class="dashboard" id="dashboard">
+        <div class="card card-nfce">
+            <div class="card-title">NFC-e (Vendas Válidas)</div>
+            <div class="card-value" id="valNFCe">R$ 0,00</div>
+            <div class="card-info"><span id="qtdNFCe">0</span> notas válidas</div>
+        </div>
+
+        <div class="card card-sat">
+            <div class="card-title">SAT (Vendas Válidas)</div>
+            <div class="card-value" id="valSAT">R$ 0,00</div>
+            <div class="card-info"><span id="qtdSAT">0</span> cupons válidos</div>
+        </div>
+
+        <div class="card card-cancelado">
+            <div class="card-title">Total Cancelado/Ignorado</div>
+            <div class="card-value" id="valCanc">R$ 0,00</div>
+            <div class="card-info"><span id="qtdCanc">0</span> arquivos de cancelamento</div>
+        </div>
+
+        <div class="card card-total">
+            <div class="card-title">Total Líquido (Realmente Vendido)</div>
+            <div class="card-value" id="valTotal">R$ 0,00</div>
+            <div class="card-info">Soma de NFC-e + SAT (Excluindo cancelamentos)</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const parser = new DOMParser();
+
+    fileInput.addEventListener('change', async function(e) {
+        const files = e.target.files;
+        if (files.length === 0) return;
+
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('dashboard').style.display = 'none';
+
+        // Mapas para armazenar as vendas pela CHAVE DE ACESSO
+        // Estrutura: { '4321...': { valor: 10.00, tipo: 'NFCe' } }
+        const vendasMap = new Map();
+        
+        // Conjunto (Set) para armazenar chaves que foram canceladas
+        const chavesCanceladas = new Set();
+
+        // 1. Ler todos os arquivos e categorizar
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            if (file.name.toLowerCase().endsWith('.xml')) {
+                try {
+                    const text = await file.text();
+                    processarArquivo(text, vendasMap, chavesCanceladas);
+                } catch (err) {
+                    console.error("Erro ao ler", file.name);
+                }
+            }
+        }
+
+        // 2. Calcular totais ignorando as chaves que estão no Set de canceladas
+        let totalNFCe = 0; let qtdNFCe = 0;
+        let totalSAT = 0; let qtdSAT = 0;
+        let totalCanceladoValor = 0; // Apenas estatístico
+
+        vendasMap.forEach((dados, chave) => {
+            if (chavesCanceladas.has(chave)) {
+                // Se a chave desta venda está na lista de canceladas, IGNORA a soma
+                totalCanceladoValor += dados.valor;
+            } else {
+                // Se não foi cancelada, soma
+                if (dados.tipo === 'NFCe') {
+                    totalNFCe += dados.valor;
+                    qtdNFCe++;
+                } else {
+                    totalSAT += dados.valor;
+                    qtdSAT++;
+                }
+            }
+        });
+
+        atualizarTela(totalNFCe, qtdNFCe, totalSAT, qtdSAT, totalCanceladoValor, chavesCanceladas.size);
+    });
+
+    function processarArquivo(xmlText, vendasMap, chavesCanceladas) {
+        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+
+        // --- DETECTAR NFC-e (VENDA) ---
+        const infNFe = xmlDoc.getElementsByTagName("infNFe")[0];
+        if (infNFe) {
+            const vNF = xmlDoc.getElementsByTagName("vNF")[0];
+            let chave = infNFe.getAttribute("Id"); // Ex: NFe352308...
+            if (chave && vNF) {
+                chave = chave.replace('NFe', ''); // Remove o prefixo para ficar só os números
+                vendasMap.set(chave, { valor: parseFloat(vNF.textContent), tipo: 'NFCe' });
+                return;
+            }
+        }
+
+        // --- DETECTAR SAT (VENDA) ---
+        const infCFe = xmlDoc.getElementsByTagName("infCFe")[0];
+        // Verifica se é venda (não pode ser CFeCanc)
+        if (infCFe && !xmlDoc.getElementsByTagName("CFeCanc")[0]) { 
+            const vCFe = xmlDoc.getElementsByTagName("vCFe")[0];
+            let chave = infCFe.getAttribute("Id"); // Ex: CFe352308...
+            if (chave && vCFe) {
+                chave = chave.replace('CFe', '');
+                vendasMap.set(chave, { valor: parseFloat(vCFe.textContent), tipo: 'SAT' });
+                return;
+            }
+        }
+
+        // --- DETECTAR CANCELAMENTO NFC-e (Evento 110111) ---
+        const evento = xmlDoc.getElementsByTagName("infEvento")[0];
+        if (evento) {
+            const tpEvento = xmlDoc.getElementsByTagName("tpEvento")[0];
+            // 110111 é o código oficial de cancelamento
+            if (tpEvento && tpEvento.textContent === '110111') {
+                const chNFe = xmlDoc.getElementsByTagName("chNFe")[0];
+                if (chNFe) {
+                    chavesCanceladas.add(chNFe.textContent);
+                    return;
+                }
+            }
+        }
+
+        // --- DETECTAR CANCELAMENTO SAT ---
+        const cfeCanc = xmlDoc.getElementsByTagName("CFeCanc")[0];
+        if (cfeCanc) {
+            const infCFeCanc = cfeCanc.getElementsByTagName("infCFe")[0];
+            if (infCFeCanc) {
+                // No SAT cancelado, a chave da venda original fica em chCanc
+                const chCanc = infCFeCanc.getAttribute("chCanc"); 
+                if (chCanc) {
+                    chavesCanceladas.add(chCanc);
+                    return;
+                }
+            }
+        }
+    }
+
+    function atualizarTela(nfce, qNfce, sat, qSat, valCanc, qCanc) {
+        const fmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+        document.getElementById('valNFCe').innerText = fmt.format(nfce);
+        document.getElementById('qtdNFCe').innerText = qNfce;
+
+        document.getElementById('valSAT').innerText = fmt.format(sat);
+        document.getElementById('qtdSAT').innerText = qSat;
+
+        document.getElementById('valCanc').innerText = fmt.format(valCanc);
+        document.getElementById('qtdCanc').innerText = qCanc;
+
+        document.getElementById('valTotal').innerText = fmt.format(nfce + sat);
+        
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('dashboard').style.display = 'grid';
+    }
+</script>
+
+</body>
+</html>
