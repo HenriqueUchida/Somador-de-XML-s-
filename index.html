@@ -3,30 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Leitor Fiscal Inteligente (Líquido)</title>
+    <title>Auditor Fiscal Completo (Dashboard + CSV com Caixa)</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; padding-top: 30px; }
-        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 800px; text-align: center; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; padding-top: 30px; padding-bottom: 50px; }
+        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 850px; text-align: center; }
         
         h1 { color: #2c3e50; font-size: 1.8rem; margin-bottom: 0.5rem; }
         p { color: #7f8c8d; margin-bottom: 2rem; }
         
-        .upload-area { border: 2px dashed #bdc3c7; padding: 30px; border-radius: 10px; cursor: pointer; transition: 0.3s; position: relative; }
+        /* Área de Upload */
+        .upload-area { border: 2px dashed #bdc3c7; padding: 30px; border-radius: 10px; cursor: pointer; transition: 0.3s; position: relative; margin-bottom: 20px;}
         .upload-area:hover { background-color: #f7f9fa; border-color: #3498db; }
         .upload-area input { position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
         .btn-text { font-size: 1.1rem; color: #34495e; font-weight: bold; }
 
+        /* Dashboard (Cards) */
         .dashboard { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-top: 30px; display: none; }
         .card { padding: 20px; border-radius: 8px; text-align: left; color: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         
         .card-nfce { background: linear-gradient(135deg, #3498db, #2980b9); }
         .card-sat { background: linear-gradient(135deg, #e67e22, #d35400); }
-        .card-cancelado { background: linear-gradient(135deg, #e74c3c, #c0392b); } /* Vermelho para cancelados */
+        .card-cancelado { background: linear-gradient(135deg, #e74c3c, #c0392b); }
         .card-total { grid-column: span 3; background: linear-gradient(135deg, #27ae60, #2ecc71); text-align: center; margin-top: 10px;}
 
         .card-title { font-size: 0.8rem; text-transform: uppercase; opacity: 0.9; margin-bottom: 5px; }
         .card-value { font-size: 1.6rem; font-weight: bold; }
         .card-info { font-size: 0.75rem; opacity: 0.9; margin-top: 5px; }
+
+        /* Área de Ação (Download) */
+        .action-area { margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; display: none; }
+        .btn-download {
+            background-color: #2c3e50; color: white; border: none; padding: 12px 25px; 
+            font-size: 1rem; border-radius: 8px; cursor: pointer; font-weight: bold;
+            transition: 0.2s; display: inline-flex; align-items: center; gap: 10px;
+        }
+        .btn-download:hover { background-color: #1a252f; transform: translateY(-2px); }
 
         #loading { display: none; margin-top: 20px; color: #3498db; font-weight: bold; }
     </style>
@@ -34,62 +45,74 @@
 <body>
 
 <div class="container">
-    <h1>Leitor Fiscal</h1>
-    <p>O sistema irá cruzar as chaves de acesso para deduzir as notas canceladas.</p>
+    <h1>Auditor Fiscal</h1>
+    <p>Painel de totais e gerador de relatório CSV (Com filtro de cancelados)</p>
     
     <div class="upload-area">
         <span class="btn-text">📂 Selecionar Pasta com XMLs</span>
         <input type="file" id="fileInput" webkitdirectory directory multiple />
     </div>
 
-    <div id="loading">Lendo arquivos e cruzando dados... aguarde.</div>
+    <div id="loading">Lendo arquivos, identificando caixas e gerando CSV... aguarde.</div>
 
     <div class="dashboard" id="dashboard">
         <div class="card card-nfce">
-            <div class="card-title">NFC-e (Vendas Válidas)</div>
+            <div class="card-title">NFC-e (Válidas)</div>
             <div class="card-value" id="valNFCe">R$ 0,00</div>
-            <div class="card-info"><span id="qtdNFCe">0</span> notas válidas</div>
+            <div class="card-info"><span id="qtdNFCe">0</span> notas</div>
         </div>
 
         <div class="card card-sat">
-            <div class="card-title">SAT (Vendas Válidas)</div>
+            <div class="card-title">SAT (Válidos)</div>
             <div class="card-value" id="valSAT">R$ 0,00</div>
-            <div class="card-info"><span id="qtdSAT">0</span> cupons válidos</div>
+            <div class="card-info"><span id="qtdSAT">0</span> cupons</div>
         </div>
 
         <div class="card card-cancelado">
-            <div class="card-title">Total Cancelado/Ignorado</div>
+            <div class="card-title">Cancelados/Ignorados</div>
             <div class="card-value" id="valCanc">R$ 0,00</div>
-            <div class="card-info"><span id="qtdCanc">0</span> arquivos de cancelamento</div>
+            <div class="card-info"><span id="qtdCanc">0</span> arquivos</div>
         </div>
 
         <div class="card card-total">
             <div class="card-title">Total Líquido (Realmente Vendido)</div>
             <div class="card-value" id="valTotal">R$ 0,00</div>
-            <div class="card-info">Soma de NFC-e + SAT (Excluindo cancelamentos)</div>
+            <div class="card-info">Soma Final de NFC-e + SAT</div>
+        </div>
+    </div>
+
+    <div class="action-area" id="actionArea">
+        <button id="btnDownload" class="btn-download">
+            ⬇️ Baixar Relatório Detalhado (.csv)
+        </button>
+        <div style="margin-top: 10px; font-size: 0.9rem; color: #7f8c8d;">
+            O CSV contém CNPJ, Caixa, Chave e Valor.
         </div>
     </div>
 </div>
 
 <script>
     const fileInput = document.getElementById('fileInput');
+    const btnDownload = document.getElementById('btnDownload');
     const parser = new DOMParser();
+
+    // Variável global para guardar os dados prontos para o CSV
+    let dadosParaCsv = [];
 
     fileInput.addEventListener('change', async function(e) {
         const files = e.target.files;
         if (files.length === 0) return;
 
+        // Resetar UI
         document.getElementById('loading').style.display = 'block';
         document.getElementById('dashboard').style.display = 'none';
+        document.getElementById('actionArea').style.display = 'none';
+        dadosParaCsv = []; // Limpa memória anterior
 
-        // Mapas para armazenar as vendas pela CHAVE DE ACESSO
-        // Estrutura: { '4321...': { valor: 10.00, tipo: 'NFCe' } }
         const vendasMap = new Map();
-        
-        // Conjunto (Set) para armazenar chaves que foram canceladas
         const chavesCanceladas = new Set();
 
-        // 1. Ler todos os arquivos e categorizar
+        // 1. Leitura
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             if (file.name.toLowerCase().endsWith('.xml')) {
@@ -102,17 +125,17 @@
             }
         }
 
-        // 2. Calcular totais ignorando as chaves que estão no Set de canceladas
+        // 2. Cálculo e Preparação do CSV
         let totalNFCe = 0; let qtdNFCe = 0;
         let totalSAT = 0; let qtdSAT = 0;
-        let totalCanceladoValor = 0; // Apenas estatístico
+        let totalCanc = 0;
 
         vendasMap.forEach((dados, chave) => {
             if (chavesCanceladas.has(chave)) {
-                // Se a chave desta venda está na lista de canceladas, IGNORA a soma
-                totalCanceladoValor += dados.valor;
+                // É cancelado
+                totalCanc += dados.valor;
             } else {
-                // Se não foi cancelada, soma
+                // É válido
                 if (dados.tipo === 'NFCe') {
                     totalNFCe += dados.valor;
                     qtdNFCe++;
@@ -120,86 +143,138 @@
                     totalSAT += dados.valor;
                     qtdSAT++;
                 }
+
+                // Adiciona na lista de exportação (incluindo o CAIXA)
+                dadosParaCsv.push({
+                    cnpj: dados.cnpj,
+                    chave: chave,
+                    valor: dados.valor,
+                    tipo: dados.tipo,
+                    caixa: dados.caixa
+                });
             }
         });
 
-        atualizarTela(totalNFCe, qtdNFCe, totalSAT, qtdSAT, totalCanceladoValor, chavesCanceladas.size);
+        // 3. Atualiza a Tela
+        atualizarDashboard(totalNFCe, qtdNFCe, totalSAT, qtdSAT, totalCanc, chavesCanceladas.size);
     });
 
+    // Função de Parse
     function processarArquivo(xmlText, vendasMap, chavesCanceladas) {
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
-        // --- DETECTAR NFC-e (VENDA) ---
+        // --- NFC-e ---
         const infNFe = xmlDoc.getElementsByTagName("infNFe")[0];
         if (infNFe) {
             const vNF = xmlDoc.getElementsByTagName("vNF")[0];
-            let chave = infNFe.getAttribute("Id"); // Ex: NFe352308...
+            const emit = xmlDoc.getElementsByTagName("emit")[0];
+            let chave = infNFe.getAttribute("Id");
+            
+            // Pega a SÉRIE da nota para usar como Caixa
+            const serie = xmlDoc.getElementsByTagName("serie")[0]?.textContent || "";
+
             if (chave && vNF) {
-                chave = chave.replace('NFe', ''); // Remove o prefixo para ficar só os números
-                vendasMap.set(chave, { valor: parseFloat(vNF.textContent), tipo: 'NFCe' });
+                chave = chave.replace('NFe', '');
+                let cnpj = emit ? emit.getElementsByTagName("CNPJ")[0]?.textContent : "";
+                
+                vendasMap.set(chave, { 
+                    valor: parseFloat(vNF.textContent), 
+                    tipo: 'NFCe',
+                    cnpj: cnpj,
+                    caixa: serie // Série = Caixa na NFC-e
+                });
                 return;
             }
         }
 
-        // --- DETECTAR SAT (VENDA) ---
+        // --- SAT ---
         const infCFe = xmlDoc.getElementsByTagName("infCFe")[0];
-        // Verifica se é venda (não pode ser CFeCanc)
         if (infCFe && !xmlDoc.getElementsByTagName("CFeCanc")[0]) { 
             const vCFe = xmlDoc.getElementsByTagName("vCFe")[0];
-            let chave = infCFe.getAttribute("Id"); // Ex: CFe352308...
+            const emit = xmlDoc.getElementsByTagName("emit")[0];
+            let chave = infCFe.getAttribute("Id");
+            
+            // Pega o numeroCaixa do SAT
+            const numCaixa = xmlDoc.getElementsByTagName("numeroCaixa")[0]?.textContent || "";
+
             if (chave && vCFe) {
                 chave = chave.replace('CFe', '');
-                vendasMap.set(chave, { valor: parseFloat(vCFe.textContent), tipo: 'SAT' });
+                let cnpj = emit ? emit.getElementsByTagName("CNPJ")[0]?.textContent : "";
+
+                vendasMap.set(chave, { 
+                    valor: parseFloat(vCFe.textContent), 
+                    tipo: 'SAT',
+                    cnpj: cnpj,
+                    caixa: numCaixa // Tag numeroCaixa no SAT
+                });
                 return;
             }
         }
 
-        // --- DETECTAR CANCELAMENTO NFC-e (Evento 110111) ---
+        // --- CANCELAMENTOS ---
         const evento = xmlDoc.getElementsByTagName("infEvento")[0];
         if (evento) {
             const tpEvento = xmlDoc.getElementsByTagName("tpEvento")[0];
-            // 110111 é o código oficial de cancelamento
             if (tpEvento && tpEvento.textContent === '110111') {
                 const chNFe = xmlDoc.getElementsByTagName("chNFe")[0];
-                if (chNFe) {
-                    chavesCanceladas.add(chNFe.textContent);
-                    return;
-                }
+                if (chNFe) chavesCanceladas.add(chNFe.textContent);
             }
         }
-
-        // --- DETECTAR CANCELAMENTO SAT ---
+        
         const cfeCanc = xmlDoc.getElementsByTagName("CFeCanc")[0];
         if (cfeCanc) {
             const infCFeCanc = cfeCanc.getElementsByTagName("infCFe")[0];
             if (infCFeCanc) {
-                // No SAT cancelado, a chave da venda original fica em chCanc
-                const chCanc = infCFeCanc.getAttribute("chCanc"); 
-                if (chCanc) {
-                    chavesCanceladas.add(chCanc);
-                    return;
-                }
+                const chCanc = infCFeCanc.getAttribute("chCanc");
+                if (chCanc) chavesCanceladas.add(chCanc);
             }
         }
     }
 
-    function atualizarTela(nfce, qNfce, sat, qSat, valCanc, qCanc) {
+    function atualizarDashboard(nfce, qNfce, sat, qSat, valCanc, qCanc) {
         const fmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
         document.getElementById('valNFCe').innerText = fmt.format(nfce);
         document.getElementById('qtdNFCe').innerText = qNfce;
-
         document.getElementById('valSAT').innerText = fmt.format(sat);
         document.getElementById('qtdSAT').innerText = qSat;
-
         document.getElementById('valCanc').innerText = fmt.format(valCanc);
         document.getElementById('qtdCanc').innerText = qCanc;
-
         document.getElementById('valTotal').innerText = fmt.format(nfce + sat);
-        
+
         document.getElementById('loading').style.display = 'none';
         document.getElementById('dashboard').style.display = 'grid';
+        
+        if ((qNfce + qSat) > 0) {
+            document.getElementById('actionArea').style.display = 'block';
+        }
     }
+
+    btnDownload.addEventListener('click', function() {
+        if (dadosParaCsv.length === 0) {
+            alert("Nenhum dado válido para exportar.");
+            return;
+        }
+
+        // Cabeçalho atualizado
+        let csvContent = "CNPJ;Chave de Acesso;Caixa;Valor;Tipo\n";
+
+        dadosParaCsv.forEach(row => {
+            let valorFormatado = row.valor.toFixed(2).replace('.', ',');
+            // Adicionado row.caixa
+            csvContent += `${row.cnpj};'${row.chave};${row.caixa};${valorFormatado};${row.tipo}\n`;
+        });
+
+        const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", "auditoria_fiscal_caixas.csv");
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
 </script>
 
 </body>
