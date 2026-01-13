@@ -262,7 +262,7 @@
         dadosParaCsv.forEach(row => {
             let valorFormatado = row.valor.toFixed(2).replace('.', ',');
             // Adicionado row.caixa
-            csvContent += `${row.cnpj};'${row.chave};${row.caixa};${valorFormatado};${row.tipo}\n`;
+            csvContent += `${row.cnpj};${row.chave};${row.caixa};${valorFormatado};${row.tipo}\n`;
         });
 
         const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
