@@ -4,278 +4,61 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Auditor Fiscal Completo (Dashboard + CSV com Caixa)</title>
-    <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; padding-top: 30px; padding-bottom: 50px; }
-        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 850px; text-align: center; }
-        
-        h1 { color: #2c3e50; font-size: 1.8rem; margin-bottom: 0.5rem; }
-        p { color: #7f8c8d; margin-bottom: 2rem; }
-        
-        /* Área de Upload */
-        .upload-area { border: 2px dashed #bdc3c7; padding: 30px; border-radius: 10px; cursor: pointer; transition: 0.3s; position: relative; margin-bottom: 20px;}
-        .upload-area:hover { background-color: #f7f9fa; border-color: #3498db; }
-        .upload-area input { position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-        .btn-text { font-size: 1.1rem; color: #34495e; font-weight: bold; }
-
-        /* Dashboard (Cards) */
-        .dashboard { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-top: 30px; display: none; }
-        .card { padding: 20px; border-radius: 8px; text-align: left; color: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        
-        .card-nfce { background: linear-gradient(135deg, #3498db, #2980b9); }
-        .card-sat { background: linear-gradient(135deg, #e67e22, #d35400); }
-        .card-cancelado { background: linear-gradient(135deg, #e74c3c, #c0392b); }
-        .card-total { grid-column: span 3; background: linear-gradient(135deg, #27ae60, #2ecc71); text-align: center; margin-top: 10px;}
-
-        .card-title { font-size: 0.8rem; text-transform: uppercase; opacity: 0.9; margin-bottom: 5px; }
-        .card-value { font-size: 1.6rem; font-weight: bold; }
-        .card-info { font-size: 0.75rem; opacity: 0.9; margin-top: 5px; }
-
-        /* Área de Ação (Download) */
-        .action-area { margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; display: none; }
-        .btn-download {
-            background-color: #2c3e50; color: white; border: none; padding: 12px 25px; 
-            font-size: 1rem; border-radius: 8px; cursor: pointer; font-weight: bold;
-            transition: 0.2s; display: inline-flex; align-items: center; gap: 10px;
-        }
-        .btn-download:hover { background-color: #1a252f; transform: translateY(-2px); }
-
-        #loading { display: none; margin-top: 20px; color: #3498db; font-weight: bold; }
-    </style>
+    <link rel="stylesheet" href="./css/somador_xml.css">
 </head>
 <body>
 
-<div class="container">
-    <h1>Auditor Fiscal</h1>
-    <p>Painel de totais e gerador de relatório CSV (Com filtro de cancelados)</p>
-    
-    <div class="upload-area">
-        <span class="btn-text">📂 Selecionar Pasta com XMLs</span>
-        <input type="file" id="fileInput" webkitdirectory directory multiple />
-    </div>
-
-    <div id="loading">Lendo arquivos, identificando caixas e gerando CSV... aguarde.</div>
-
-    <div class="dashboard" id="dashboard">
-        <div class="card card-nfce">
-            <div class="card-title">NFC-e (Válidas)</div>
-            <div class="card-value" id="valNFCe">R$ 0,00</div>
-            <div class="card-info"><span id="qtdNFCe">0</span> notas</div>
-        </div>
-
-        <div class="card card-sat">
-            <div class="card-title">SAT (Válidos)</div>
-            <div class="card-value" id="valSAT">R$ 0,00</div>
-            <div class="card-info"><span id="qtdSAT">0</span> cupons</div>
-        </div>
-
-        <div class="card card-cancelado">
-            <div class="card-title">Cancelados/Ignorados</div>
-            <div class="card-value" id="valCanc">R$ 0,00</div>
-            <div class="card-info"><span id="qtdCanc">0</span> arquivos</div>
-        </div>
-
-        <div class="card card-total">
-            <div class="card-title">Total Líquido (Realmente Vendido)</div>
-            <div class="card-value" id="valTotal">R$ 0,00</div>
-            <div class="card-info">Soma Final de NFC-e + SAT</div>
-        </div>
-    </div>
-
-    <div class="action-area" id="actionArea">
-        <button id="btnDownload" class="btn-download">
-            ⬇️ Baixar Relatório Detalhado (.csv)
-        </button>
-        <div style="margin-top: 10px; font-size: 0.9rem; color: #7f8c8d;">
-            O CSV contém CNPJ, Caixa, Chave e Valor.
-        </div>
-    </div>
-</div>
-
-<script>
-    const fileInput = document.getElementById('fileInput');
-    const btnDownload = document.getElementById('btnDownload');
-    const parser = new DOMParser();
-
-    // Variável global para guardar os dados prontos para o CSV
-    let dadosParaCsv = [];
-
-    fileInput.addEventListener('change', async function(e) {
-        const files = e.target.files;
-        if (files.length === 0) return;
-
-        // Resetar UI
-        document.getElementById('loading').style.display = 'block';
-        document.getElementById('dashboard').style.display = 'none';
-        document.getElementById('actionArea').style.display = 'none';
-        dadosParaCsv = []; // Limpa memória anterior
-
-        const vendasMap = new Map();
-        const chavesCanceladas = new Set();
-
-        // 1. Leitura
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            if (file.name.toLowerCase().endsWith('.xml')) {
-                try {
-                    const text = await file.text();
-                    processarArquivo(text, vendasMap, chavesCanceladas);
-                } catch (err) {
-                    console.error("Erro ao ler", file.name);
-                }
-            }
-        }
-
-        // 2. Cálculo e Preparação do CSV
-        let totalNFCe = 0; let qtdNFCe = 0;
-        let totalSAT = 0; let qtdSAT = 0;
-        let totalCanc = 0;
-
-        vendasMap.forEach((dados, chave) => {
-            if (chavesCanceladas.has(chave)) {
-                // É cancelado
-                totalCanc += dados.valor;
-            } else {
-                // É válido
-                if (dados.tipo === 'NFCe') {
-                    totalNFCe += dados.valor;
-                    qtdNFCe++;
-                } else {
-                    totalSAT += dados.valor;
-                    qtdSAT++;
-                }
-
-                // Adiciona na lista de exportação (incluindo o CAIXA)
-                dadosParaCsv.push({
-                    cnpj: dados.cnpj,
-                    chave: chave,
-                    valor: dados.valor,
-                    tipo: dados.tipo,
-                    caixa: dados.caixa
-                });
-            }
-        });
-
-        // 3. Atualiza a Tela
-        atualizarDashboard(totalNFCe, qtdNFCe, totalSAT, qtdSAT, totalCanc, chavesCanceladas.size);
-    });
-
-    // Função de Parse
-    function processarArquivo(xmlText, vendasMap, chavesCanceladas) {
-        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-
-        // --- NFC-e ---
-        const infNFe = xmlDoc.getElementsByTagName("infNFe")[0];
-        if (infNFe) {
-            const vNF = xmlDoc.getElementsByTagName("vNF")[0];
-            const emit = xmlDoc.getElementsByTagName("emit")[0];
-            let chave = infNFe.getAttribute("Id");
-            
-            // Pega a SÉRIE da nota para usar como Caixa
-            const serie = xmlDoc.getElementsByTagName("serie")[0]?.textContent || "";
-
-            if (chave && vNF) {
-                chave = chave.replace('NFe', '');
-                let cnpj = emit ? emit.getElementsByTagName("CNPJ")[0]?.textContent : "";
-                
-                vendasMap.set(chave, { 
-                    valor: parseFloat(vNF.textContent), 
-                    tipo: 'NFCe',
-                    cnpj: cnpj,
-                    caixa: serie // Série = Caixa na NFC-e
-                });
-                return;
-            }
-        }
-
-        // --- SAT ---
-        const infCFe = xmlDoc.getElementsByTagName("infCFe")[0];
-        if (infCFe && !xmlDoc.getElementsByTagName("CFeCanc")[0]) { 
-            const vCFe = xmlDoc.getElementsByTagName("vCFe")[0];
-            const emit = xmlDoc.getElementsByTagName("emit")[0];
-            let chave = infCFe.getAttribute("Id");
-            
-            // Pega o numeroCaixa do SAT
-            const numCaixa = xmlDoc.getElementsByTagName("numeroCaixa")[0]?.textContent || "";
-
-            if (chave && vCFe) {
-                chave = chave.replace('CFe', '');
-                let cnpj = emit ? emit.getElementsByTagName("CNPJ")[0]?.textContent : "";
-
-                vendasMap.set(chave, { 
-                    valor: parseFloat(vCFe.textContent), 
-                    tipo: 'SAT',
-                    cnpj: cnpj,
-                    caixa: numCaixa // Tag numeroCaixa no SAT
-                });
-                return;
-            }
-        }
-
-        // --- CANCELAMENTOS ---
-        const evento = xmlDoc.getElementsByTagName("infEvento")[0];
-        if (evento) {
-            const tpEvento = xmlDoc.getElementsByTagName("tpEvento")[0];
-            if (tpEvento && tpEvento.textContent === '110111') {
-                const chNFe = xmlDoc.getElementsByTagName("chNFe")[0];
-                if (chNFe) chavesCanceladas.add(chNFe.textContent);
-            }
-        }
+    <main>
+        <header>
+            <nav id="menu-opcoes">
+                <ul>
+                    <li id="somador" class="opcao">Somador de XML's</li>
+                    <li id="validador" class="opcao">Validador de NCM</li>
+                </ul>
+            </nav>
+        </header>
+        <div id="conteudo-dinamico" class="container">
+            <h1>Auditor Fiscal</h1>
+            <p>Painel de totais e gerador de relatório CSV (Com filtro de cancelados)</p>
         
-        const cfeCanc = xmlDoc.getElementsByTagName("CFeCanc")[0];
-        if (cfeCanc) {
-            const infCFeCanc = cfeCanc.getElementsByTagName("infCFe")[0];
-            if (infCFeCanc) {
-                const chCanc = infCFeCanc.getAttribute("chCanc");
-                if (chCanc) chavesCanceladas.add(chCanc);
-            }
-        }
-    }
+            <div class="upload-area">
+                <span class="btn-text">📂 Selecionar Pasta com XMLs</span>
+                <input type="file" id="fileInput" webkitdirectory directory multiple />
+            </div>
+            <div id="loading">Lendo arquivos, identificando caixas e gerando CSV... aguarde.</div>
+            <div class="dashboard" id="dashboard">
+                <div class="card card-nfce">
+                    <div class="card-title">NFC-e (Válidas)</div>
+                    <div class="card-value" id="valNFCe">R$ 0,00</div>
+                    <div class="card-info"><span id="qtdNFCe">0</span> notas</div>
+                </div>
+                <div class="card card-sat">
+                    <div class="card-title">SAT (Válidos)</div>
+                    <div class="card-value" id="valSAT">R$ 0,00</div>
+                    <div class="card-info"><span id="qtdSAT">0</span> cupons</div>
+                </div>
+                <div class="card card-cancelado">
+                    <div class="card-title">Cancelados/Ignorados</div>
+                    <div class="card-value" id="valCanc">R$ 0,00</div>
+                    <div class="card-info"><span id="qtdCanc">0</span> arquivos</div>
+                </div>
+                <div class="card card-total">
+                    <div class="card-title">Total Líquido (Realmente Vendido)</div>
+                    <div class="card-value" id="valTotal">R$ 0,00</div>
+                    <div class="card-info">Soma Final de NFC-e + SAT</div>
+                </div>
+            </div>
+            <div class="action-area" id="actionArea">
+                <button id="btnDownload" class="btn-download">
+                    ⬇️ Baixar Relatório Detalhado (.csv)
+                </button>
+                <div style="margin-top: 10px; font-size: 0.9rem; color: #7f8c8d;">
+                    O CSV contém CNPJ, Caixa, Chave e Valor.
+                </div>
+            </div>
+        </div>
+    </main>
 
-    function atualizarDashboard(nfce, qNfce, sat, qSat, valCanc, qCanc) {
-        const fmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-
-        document.getElementById('valNFCe').innerText = fmt.format(nfce);
-        document.getElementById('qtdNFCe').innerText = qNfce;
-        document.getElementById('valSAT').innerText = fmt.format(sat);
-        document.getElementById('qtdSAT').innerText = qSat;
-        document.getElementById('valCanc').innerText = fmt.format(valCanc);
-        document.getElementById('qtdCanc').innerText = qCanc;
-        document.getElementById('valTotal').innerText = fmt.format(nfce + sat);
-
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('dashboard').style.display = 'grid';
-        
-        if ((qNfce + qSat) > 0) {
-            document.getElementById('actionArea').style.display = 'block';
-        }
-    }
-
-    btnDownload.addEventListener('click', function() {
-        if (dadosParaCsv.length === 0) {
-            alert("Nenhum dado válido para exportar.");
-            return;
-        }
-
-        // Cabeçalho atualizado
-        let csvContent = "CNPJ;Chave de Acesso;Caixa;Valor;Tipo\n";
-
-        dadosParaCsv.forEach(row => {
-            let valorFormatado = row.valor.toFixed(2).replace('.', ',');
-            // Adicionado row.caixa
-            csvContent += `${row.cnpj};${row.chave};${row.caixa};${valorFormatado};${row.tipo}\n`;
-        });
-
-        const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", "auditoria_fiscal_caixas.csv");
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    });
-</script>
-
+    <script src="script/script.js"></script>
 </body>
 </html>
