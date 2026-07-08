@@ -150,7 +150,9 @@
                     chave: chave,
                     valor: dados.valor,
                     tipo: dados.tipo,
-                    caixa: dados.caixa
+                    caixa: dados.caixa,
+                    cupom: dados.cupom || "",
+                    data: dados.data || ""
                 });
             }
         });
@@ -172,6 +174,14 @@
             
             // Pega a SÉRIE da nota para usar como Caixa
             const serie = xmlDoc.getElementsByTagName("serie")[0]?.textContent || "";
+            const dhEmi = xmlDoc.getElementsByTagName("dhEmi")[0]?.textContent || "";
+            const dataVenda = dhEmi ? dhEmi.substring(0,10).split("-").reverse().join("/") : "";
+
+// Número de controle (No. Ctrl)
+let cupom = "";
+const infCpl = xmlDoc.getElementsByTagName("infCpl")[0]?.textContent || "";
+const matchCupom = infCpl.match(/No\.\s*Ctrl:\s*(\d+)/i);
+if (matchCupom) cupom = matchCupom[1];
 
             if (chave && vNF) {
                 chave = chave.replace('NFe', '');
@@ -181,7 +191,9 @@
                     valor: parseFloat(vNF.textContent), 
                     tipo: 'NFCe',
                     cnpj: cnpj,
-                    caixa: serie // Série = Caixa na NFC-e
+                    caixa: serie, // Série = Caixa na NFC-e
+                    cupom: cupom,
+                    data: dataVenda
                 });
                 return;
             }
@@ -257,12 +269,12 @@
         }
 
         // Cabeçalho atualizado
-        let csvContent = "CNPJ;Chave de Acesso;Caixa;Valor;Tipo\n";
+        let csvContent = "Data;CNPJ;Chave de Acesso;Caixa;Cupom;Valor;Tipo\n";
 
         dadosParaCsv.forEach(row => {
             let valorFormatado = row.valor.toFixed(2).replace('.', ',');
             // Adicionado row.caixa
-            csvContent += `${row.cnpj};${row.chave};${row.caixa};${valorFormatado};${row.tipo}\n`;
+            csvContent += `${row.data};${row.cnpj};${row.chave};${row.caixa};${row.cupom};${valorFormatado};${row.tipo}\n`;
         });
 
         const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
