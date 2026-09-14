@@ -180,7 +180,7 @@
 // Número de controle (No. Ctrl)
 let cupom = "";
 const infCpl = xmlDoc.getElementsByTagName("infCpl")[0]?.textContent || "";
-const matchCupom = infCpl.match(/No\.\s*Ctrl:\s*(\d+)/i);
+const matchCupom = infCpl.match(/(?:No\.\s*Ctrl|COO)\s*:\s*(\d+)/i);
 if (matchCupom) cupom = matchCupom[1];
 
             if (chave && vNF) {
